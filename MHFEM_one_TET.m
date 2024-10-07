@@ -28,7 +28,7 @@ for j = 1:4
 
         for l = 1:4
             for m = 1:4
-                lambda_lm = V / (60 .* (1 + delta_lm(l, m)));
+                lambda_lm = V / (60 .* (1 + 2 * delta_lm(l, m)));
                 B(j, k) = B(j, k) + A_j * A_k / (9 * V .^ 2) * dot((coord(l, :) - coord(j, :)), (coord(m, :) - coord(k, :))) * lambda_lm;
             end
         end
@@ -43,7 +43,7 @@ end
 
 b = zeros(5, 1);
 
-b(2) = -Area_eachFace(2) * 20;
+b(2) = -Area_eachFace(2) * 100;
 b(3) = -Area_eachFace(3) * 1;
 
 K = [B, -C;
@@ -52,11 +52,11 @@ K = [B, -C;
 K(4, :) = 0;
 K(:, 4) = 0;
 K(4, 4) = 1;
-b(4, 1) = -100;
+b(4, 1) = -0;
 
 K(1, :) = 0;
 K(:, 1) = 0;
 K(1, 1) = 1;
-b(1, 1) = -100;
+b(1, 1) = -0;
 
 inv(K) * b
