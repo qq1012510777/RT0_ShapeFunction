@@ -2,6 +2,8 @@ clc
 clear all
 close all
 
+Permeability_coe = 2;
+
 box_tets_3D;
 
 Points = msh.POS;
@@ -21,6 +23,7 @@ Element = msh.TETS(:, 1:4);
 %     1 0.5 0.5;
 %     0.5 1 0.5;
 %     0 0.5 0.5;];
+% 
 % Element = [  9 13 14 12 
 %  11 14 10 12 
 %  11 9 14 12 
@@ -45,6 +48,17 @@ Element = msh.TETS(:, 1:4);
 %  13 9 3 12 
 %  10 13 7 12 
 %  12 11 9 2 ];
+
+% Points(:, 1) = Points(:, 1) * 2;
+% Points(:, 2) = Points(:, 2) * 4;
+% Points(:, 3) = Points(:, 3) * 10;
+
+min_x = min(Points(:, 1));
+max_x = max(Points(:, 1));
+min_y = min(Points(:, 2));
+max_y = max(Points(:, 2));
+min_z = min(Points(:, 3));
+max_z = max(Points(:, 3));
 
 figure(1)
 subplot(1, 2, 1)
@@ -131,22 +145,22 @@ for i = 1:NumEles
             NumGlobalFaces = NumGlobalFaces + 1;
         end
         
-        if all(Points(P, 1) == 0)
+        if all(Points(P, 1) == min_x)
             FaceAttribute(i, j) = 1;
             x0Face = [x0Face ; P];
-        elseif all(Points(P, 1) == 1)
+        elseif all(Points(P, 1) == max_x)
             FaceAttribute(i, j) = 2;
             x1Face = [x1Face ; P];
-        elseif all(Points(P, 2) == 0)
+        elseif all(Points(P, 2) == min_y)
             FaceAttribute(i, j) = 3;
             y0Face = [y0Face ; P];
-        elseif all(Points(P, 2) == 1)
+        elseif all(Points(P, 2) == max_y)
             FaceAttribute(i, j) = 4;
             y1Face = [y1Face ; P];
-        elseif all(Points(P, 3) == 0)
+        elseif all(Points(P, 3) == min_z)
             FaceAttribute(i, j) = 5;
             z0Face = [z0Face ; P];
-        elseif all(Points(P, 3) == 1)
+        elseif all(Points(P, 3) == max_z)
             FaceAttribute(i, j) = 6;
             z1Face = [z1Face ; P];
         end
@@ -177,6 +191,8 @@ delta_lm = eye(4);
 
 Volume_eachTet = zeros(NumEles, 1);
 
+% stiffness matrix ---------------
+
 for i = 1:NumEles
     V = tetrahedronVolume(Points(Element(i, 1), :), Points(Element(i, 2), :), Points(Element(i, 3), :), Points(Element(i, 4), :));
     Volume_eachTet(i) = V;
@@ -193,11 +209,13 @@ for i = 1:NumEles
             P1_ID_k = Element(i, FaceLocalOrder(k, 1));
             P2_ID_k = Element(i, FaceLocalOrder(k, 2));
             P3_ID_k = Element(i, FaceLocalOrder(k, 3));
+
             A_k = Area_tri(Points(P1_ID_k, :), Points(P2_ID_k, :), Points(P3_ID_k, :));
+
             for l = 1:4
                 for m = 1:4
-                    lambda_lm = V / (60 .* (1 + 2 * delta_lm(l, m)));
-                    A_loc(j, k) = A_loc(j, k) + A_j * A_k / (9 * V .^ 2) * dot((Points(Element(i, l), :) - Points(Element(i, j), :)), (Points(Element(i, m), :) - Points(Element(i, k), :))) * lambda_lm;
+                    lambda_lm = V / 20 .* ((1 +  delta_lm(l, m)));
+                    A_loc(j, k) = A_loc(j, k) +  1/ Permeability_coe * A_j * A_k / (9 * V .^ 2) * dot((Points(Element(i, l), :) - Points(Element(i, j), :)), (Points(Element(i, m), :) - Points(Element(i, k), :))) * lambda_lm;
                 end
             end
         end
@@ -237,10 +255,10 @@ for i = 1:NumEles
         A_j = Area_tri(Points(P1_ID_j, :), Points(P2_ID_j, :), Points(P3_ID_j, :));
 
         if (FaceAttribute(i, j) == 5)
-            b((i-1) * 4 + j) = b((i-1) * 4 + j) - 1 * A_j; 
+            b((i-1) * 4 + j) = b((i-1) * 4 + j) - 0 * A_j; 
             rowsToDelete = [rowsToDelete, FaceID_G];
         elseif (FaceAttribute(i, j) == 6)
-            b((i-1) * 4 + j) = b((i-1) * 4 + j) - 100 * A_j; 
+            b((i-1) * 4 + j) = b((i-1) * 4 + j) - 200 * A_j; 
             rowsToDelete = [rowsToDelete, FaceID_G];
         end
     end
@@ -250,7 +268,7 @@ rowsToKeep = setdiff(1:size(K, 1), rowsToDelete + NumEles * 5);
 K = K(rowsToKeep, :);
 K = K(:, rowsToKeep);
 b = b(rowsToKeep);
-x = full(inv(K) * b);
+x = full((K) \ b);
 pressureEle = x(NumEles * 4 + 1:NumEles * 5);
 q_n_face = x(1:NumEles * 4);
 
@@ -309,7 +327,7 @@ q_n_vector = q_n_face .* NormalVector_each_face;
 quiver3(Center_eachFace(:, 1), Center_eachFace(:, 2), Center_eachFace(:, 3), ...
     q_n_vector(:, 1), q_n_vector(:, 2), q_n_vector(:, 3), 'color', 'r');
 
-
+q_eachTet
 
 figure(2)
 subplot(1, 2, 2)
