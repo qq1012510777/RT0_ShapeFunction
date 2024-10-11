@@ -215,7 +215,7 @@ for i = 1:NumEles
             for l = 1:4
                 for m = 1:4
                     lambda_lm = V / 20 .* ((1 +  delta_lm(l, m)));
-                    A_loc(j, k) = A_loc(j, k) +  1/ Permeability_coe * A_j * A_k / (9 * V .^ 2) * dot((Points(Element(i, l), :) - Points(Element(i, j), :)), (Points(Element(i, m), :) - Points(Element(i, k), :))) * lambda_lm;
+                    A_loc(j, k) = A_loc(j, k) +  1/ 1 * A_j * A_k / (9 * V .^ 2) * dot((Points(Element(i, l), :) - Points(Element(i, j), :)), (Points(Element(i, m), :) - Points(Element(i, k), :))) * lambda_lm;
                 end
             end
         end

@@ -14,7 +14,7 @@ gmsh.model.add("3D Box")
 length = 1.0
 width = 1.0
 height = 1.0
-lc = 12
+lc = 0.05
 
 # Create a 3D box geometry (Gmsh entities: Point, Line, Surface, Volume)
 # Define the 8 corner points of the box
