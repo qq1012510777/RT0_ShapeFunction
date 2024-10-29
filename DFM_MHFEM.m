@@ -12,11 +12,13 @@ else
 end
 close all
 
-Permeability_Tensor = eye(3);
+Permeability_Tensor = eye(3) .* 1e-5;
 Permeability_Tensor_inv = inv(Permeability_Tensor);
 
-Dim = NumGlobalTri + NumTets + NumFracTri;%NumFracTri * 3 + NumFracTri + ...
-    %NumInteriosEdge;
+Frac_conductivity = 1e-3;
+
+Dim = NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + ...
+    NumGlobalEdges;
 
 K = sparse(Dim, Dim);
 b_right = sparse(Dim, 1);
@@ -82,8 +84,8 @@ for ele = 1:NumTets
             corresponding_frac_tri_ID = Info_tet(localID_i, 3);
             %disp(['corresponding_frac_tri_ID = ', num2str(corresponding_frac_tri_ID)]);
 
-            K(globalTriID(i), NumGlobalTri + NumTets + corresponding_frac_tri_ID) = A_i;
-            K(NumGlobalTri + NumTets + corresponding_frac_tri_ID, globalTriID(i)) = A_i;
+            K(globalTriID(i), NumGlobalTri + NumTets + NumFracTri * 3 + corresponding_frac_tri_ID) = A_i;
+            K(NumGlobalTri + NumTets + NumFracTri * 3 + corresponding_frac_tri_ID, globalTriID(i)) = A_i;
         end
 
         if (Info_tet(localID_i, 2) == 2) % Dirichilet boundary
@@ -104,7 +106,7 @@ for i = 1:size(Info_tet, 1)
         % Neumann BC
         globalTriID = Info_tet(i, 1);
         b_right = b_right + K(:, globalTriID) * Info_tet(i, 3);
-        % nnz(K(globalTriID, :))
+        %disp(nnz(K(globalTriID, :)))
         K(globalTriID, :) = 0;
         K(:, globalTriID) = 0;
         K(globalTriID,globalTriID) = 1;
@@ -113,23 +115,154 @@ for i = 1:size(Info_tet, 1)
     
 end
 
+%-----------------------------frac triangles MHFEM-----------
+%-----------------------------frac triangles MHFEM-----------
+%-----------------------------frac triangles MHFEM-----------
+M =     [[2., 0., 1., 0., 1., 0.];
+    [0., 2., 0., 1., 0., 1.];
+    [1., 0., 2., 0., 1., 0.];
+    [0., 1., 0., 2., 0., 1.];
+    [1., 0., 1., 0., 2., 0.];
+    [0., 1., 0., 1., 0., 2.]];
+for ele = 1:NumFracTri
+    P1 = points(Tri_Frac(ele, 1), :);
+    P2 = points(Tri_Frac(ele, 2), :);
+    P3 = points(Tri_Frac(ele, 3), :);
+
+    if P1(1) == 0.5 && P2(1) == 0.5 && P3(1) == 0.5
+        P1(1) = []; P2(1) = []; P3(1) = [];
+    elseif P1(3) == 0.5 && P2(3) == 0.5 && P3(3) == 0.5
+        P1(3) = []; P2(3) = []; P3(3) = [];
+    else
+        error("errous frac tri")
+    end
+
+    T_area = Area_tri(P1, P2, P3);
+    
+    N = zeros(6, 3);
+    N(2 + 1 :4, 1 + 0) = (P2 - P1)';
+    N(4 + 1 :6, 1 + 0) = (P3 - P1)';
+    N(0 + 1 :2, 1 + 1) = (P1 - P2)';
+    N(4 + 1 :6, 1 + 1) = (P3 - P2)';
+    N(0 + 1 :2, 1 + 2) = (P1 - P3)';
+    N(2 + 1 :4, 1 + 2) = (P2 - P3)';
+
+    C = [
+        [norm(P3-P2), 0, 0],
+        [0, norm(P3-P1), 0],
+        [0, 0, norm(P1-P2)]
+    ];
+
+    A_loc = 1 ./ Frac_conductivity .* 1. / 48 / T_area * C' * N' * M * N * C;
+    
+    K(((ele-1)*3+1:ele*3) + NumGlobalTri + NumTets, ((ele-1)*3+1:ele*3) + NumGlobalTri + NumTets) = A_loc;
+
+    K(((ele-1)*3+1:ele*3) + NumGlobalTri + NumTets, NumGlobalTri + NumTets + NumFracTri * 3 + ele) = -diag(C);
+
+    K(NumGlobalTri + NumTets + NumFracTri * 3 + ele, ((ele-1)*3+1:ele*3) + NumGlobalTri + NumTets) = -diag(C)';
+    
+
+    % globalEdgeID_tt = Info_tri((ele-1) * 3 + 1 : (ele-1) * 3 + 3, 1);
+
+    for i = 1:3
+        globalEdgeID_tt = Info_tri((ele-1) * 3 + i, 1);
+        K(((ele-1)*3+i) + NumGlobalTri + NumTets, ...
+            NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt) ...
+            = C(i, i);
+        K(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt, ...
+            ((ele-1)*3+i) + NumGlobalTri + NumTets) ...
+            = C(i, i);
+
+        if (Info_tri((ele-1) * 3 + i, 2) == 2)
+            b_right(((ele-1)*3+i) + NumGlobalTri + NumTets) = -Info_tri((ele-1) * 3 + i, 3) * C(i, i);
+        end
+    end
+
+end
+
+for i = 1:NumFracTri*3
+    if (Info_tri(i, 2) == 3) % Neumann
+        globalEdgeID_tt = Info_tri(i, 1);
+
+        %b_right = b_right-K(:, NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt) * Info_tri(i, 3);
+        b_right(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt) =...
+            K(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt, ...
+            NumGlobalTri + NumTets  + i) * Info_tri(i, 3);
+        %b_right(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt)
+        % K(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt, :) = 0;
+        % K(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt, NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt) = 1;
+        % b_right(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt) = Info_tri(i, 3);
+    end
+end
+for i = 1:NumFracTri*3
+    if (Info_tri(i, 2) == 2)
+        globalEdgeID_tt = Info_tri(i, 1);
+        K(:, NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt) = 0;
+        K(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt, :) = 0;
+        b_right(NumGlobalTri + NumTets + NumFracTri * 3 + NumFracTri + globalEdgeID_tt) = 0;
+    end
+end
+% -----------------------------------------------------------
+
+x_fc = full((K(NumGlobalTri + NumTets + 1:end, NumGlobalTri + NumTets + 1:end)) \ b_right(NumGlobalTri + NumTets + 1:end));
+pressure_pure_fc = x_fc(NumFracTri * 3 + 1: NumFracTri * 4);
+
 figure(4);
+subplot(1, 3, 1)
 spy(K, 'k.'); 
 title('Sparsity Pattern');
 xlabel('Column Index');
 ylabel('Row Index');
 
-x = full((K) \ b_right);
-pressureEle = x(NumGlobalTri + 1:NumGlobalTri + NumTets);
-figure(5)
+subplot(1, 3, 2)
+title('Sparsity Pattern');
+spy([K(NumGlobalTri + NumTets + 1:end, NumGlobalTri + NumTets + 1:end), b_right(NumGlobalTri + NumTets + 1:end)], 'k.'); 
+xlabel('Column Index');
+ylabel('Row Index');
+
+subplot(1, 3, 3)
 view(3)
-title('Show pressure')
+title('Pressure pure frac')
+view(3)
 xlabel('x')
 ylabel('y')
 zlabel('z')
 hold on
+patch('Vertices', points, 'Faces', Tri_Frac, 'FaceVertexCData', pressure_pure_fc, 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 1); hold on
+colorbar
+pbaspect([1, 1, 1])
 
-tetramesh(tetrahedrons, points, pressureEle); hold on; colorbar
+
+x_couple = full((K) \ b_right);
+pressure_tet = x_couple(NumGlobalTri + 1:NumGlobalTri + NumTets);
+pressure_tri = x_couple(NumGlobalTri + NumTets + NumFracTri * 3 + 1:NumGlobalTri + NumTets + NumFracTri * 4);
+figure(5)
+subplot(1, 2, 1)
+view(3)
+title('Show pressure tet coupled')
+xlabel('x')
+ylabel('y')
+zlabel('z')
+hold on
+tetramesh(tetrahedrons, points, pressure_tet); hold on; colorbar
+pbaspect([1, 1, 1])
+
+subplot(1, 2, 2)
+view(3)
+title('Show pressure tri coupled')
+xlabel('x')
+ylabel('y')
+zlabel('z')
+hold on
+patch('Vertices', points, 'Faces', Tri_Frac, ...
+    'FaceVertexCData', pressure_tri, 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 1); hold on
+colorbar
+pbaspect([1, 1, 1])
+
+return 
+
+
+pressureEle = x(NumGlobalTri + 1:NumGlobalTri + NumTets);
 
 % figure(6)
 % view(3)
