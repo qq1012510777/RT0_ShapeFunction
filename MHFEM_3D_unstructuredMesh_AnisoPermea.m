@@ -2,7 +2,8 @@ clc
 clear all
 close all
 
-box_tets_3D;
+%box_tets_3D;
+DFM_mesh;
 
 % Permeability_Tensor = [1, 3, 1;
 %     1, 2, 4;
@@ -26,7 +27,9 @@ box_tets_3D;
 
 Permeability_Tensor = [    3.7922    0.4976    0.6672
     0.4976    3.8491    0.8459
-    0.6672    0.8459    3.7431]
+    0.6672    0.8459    3.7431];
+
+Permeability_Tensor = eye(3);
 
 % Permeability_Tensor = [1, 0, 0.;
 %     0., 2, 0;
@@ -121,7 +124,7 @@ delta_lm = eye(4);
 Volume_eachTet = zeros(NumEles, 1);
 
 Q_sss = zeros(3, 3);
-for dir = 1:3
+for dir = 3:3
     for ele = 1:NumEles
         V = tetrahedronVolume(Points(Element(ele, 1), :), Points(Element(ele, 2), :), Points(Element(ele, 3), :), Points(Element(ele, 4), :));
         Volume_eachTet(ele) = V;
@@ -151,12 +154,17 @@ for dir = 1:3
                         end
                     end
                 end
+                
             end
             B([(ele-1) * 4 + i], ele) = -A_i;
             C([(ele-1) * 4 + i], FaceGlobalID(ele, i)) = A_i;
+
+            %A_loc
         end
         A([(ele-1) * 4 + 1: ele * 4], [(ele-1) * 4 + 1: ele * 4]) = A_loc;
     end
+    
+ 
     
     K = [A, B, C;
         B', sparse(NumEles, NumEles), sparse(NumEles, NumGlobalFaces);
@@ -264,9 +272,9 @@ for dir = 1:3
 
     Q_sss(:, dir) = [Qx; Qy; Qz];
 end
--Q_sss
+%-Q_sss
 
-return 
+%return 
 q_n_vector = q_n_face .* NormalVector_each_face;
 
 figure(2)

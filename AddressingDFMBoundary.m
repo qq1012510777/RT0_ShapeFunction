@@ -24,7 +24,6 @@ patch('Vertices', points, 'Faces', triangles(1:numTriangles, 1:3), 'FaceVertexCD
 pbaspect([1, 1, 1])
 % identify frac mesh
 % 
-IfBoundaryTriangle = zeros(numTriangles, 1);
 
 Tri_Frac = zeros(numTriangles, 3);
 Tri_Bound_N = zeros(numTriangles, 3);
@@ -86,126 +85,221 @@ Tri_Frac(NumFracTri + 1:end, :) = [];
 Tri_Bound_N(NumBoundTri_N + 1:end, :) = [];
 Tri_Bound_D(NumBoundTri_D + 1:end, :) = [];
 
+%Tri_Frac = [0, 18912334, 100000];
+%NumFracTri = 0;
+
 BoundValueTri_N(NumBoundTri_N + 1:end, :) = [];
 BoundValueTri_D(NumBoundTri_D + 1:end, :) = [];
 
-figure(2)
-view(3)
-title('diff triangles')
-view(3)
-xlabel('x')
-ylabel('y')
-zlabel('z')
-hold on
-patch('Vertices', points, 'Faces', Tri_Frac, 'FaceVertexCData', zeros(NumFracTri, 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0, 'edgecolor', 'r'); hold on
-patch('Vertices', points, 'Faces', Tri_Bound_N, 'FaceVertexCData', zeros(NumBoundTri_N, 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0, 'edgecolor', 'b'); hold on
-patch('Vertices', points, 'Faces', Tri_Bound_D, 'FaceVertexCData', zeros(NumBoundTri_D, 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0, 'edgecolor', 'g'); hold on
-pbaspect([1, 1, 1])
-
-
-%---------------------------------
-% 1. global face No, 2. sign for each face, 3. face attribute
-% 4. tet no.    5. local face no.       6. FracTri no. or D no.
-% or N no. 
-GlobalNum_sign_attr = zeros(NumTets * 4, 6);
-
-
+% figure(2)
+% view(3)
+% title('diff triangles')
+% view(3)
+% xlabel('x')
+% ylabel('y')
+% zlabel('z')
+% hold on
+% patch('Vertices', points, 'Faces', Tri_Frac, 'FaceVertexCData', zeros(NumFracTri, 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0, 'edgecolor', 'r'); hold on
+% patch('Vertices', points, 'Faces', Tri_Bound_N, 'FaceVertexCData', zeros(NumBoundTri_N, 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0, 'edgecolor', 'b'); hold on
+% patch('Vertices', points, 'Faces', Tri_Bound_D, 'FaceVertexCData', zeros(NumBoundTri_D, 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0, 'edgecolor', 'g'); hold on
+% pbaspect([1, 1, 1])
 
 Tri_Frac_sort = sort(Tri_Frac, 2);
 Tri_Bound_N_sort = sort(Tri_Bound_N, 2);
 Tri_Bound_D_sort = sort(Tri_Bound_D, 2);
 
+%---------------------------------
+
+Info_tet = zeros(NumTets * 4, 4);
+% 1: global numbering
+% 2: attri 0-common_interface, 1-frac, 2-D, 3-N
+% 3: Frac ele No if it is / boundary value if it is a boundary triangle
+% 4: sign
+% note: when it is a frac face, it is isolated to a discontinous one, having a unique
+% numbering ID
+% The tet are with MHFEM, only frac triangles are hybridized
+
+Info_tri = zeros(NumFracTri * 3, 3);
+% 1: global edge numbering ID
+% 2: attri 0-common_interface, 1-nothing, 2-D, 3-N
+% 3: D or N boundary condition value if it is D or N
+% note: frac triangles are all with MHFEM, all interior edges are
+% hybridized
+
+
 FaceLocalOrder = [2, 3, 4
    3, 4, 1
    4, 1, 2
    1, 2, 3];
+EdgeLocalOrder = [2, 3
+    3, 1
+    1, 2];
 
-globalTriID = 1;
-Triang_acc = zeros(NumTets * 4, 4);
+%--------------edges
+%--------------edges
+%--------------edges
+% temp variable
+EdgeAcc = zeros(NumFracTri * 3, 3);
 
-for i = 1:NumTets
-    disp(['i = ', num2str(i), ', NumTets = ', num2str(NumTets)])
-    for j = 1:4
+NumInteriosEdge = 1;
+NumNeumannEdge = 1;
+NumDirichiletEdge = 1;
+
+NumGlobalEdges = 1;
+for i = 1:NumFracTri
+    for j = 1:3
+        edgeLocalNo = (i-1) * 3 + j;
+        ID1 = Tri_Frac(i, EdgeLocalOrder(j, 1)); 
+        ID2 = Tri_Frac(i, EdgeLocalOrder(j, 2)); 
         
+        ID_sort = sort([ID1, ID2]);
 
-        edgeLocalNo = (i-1) * 4 + j;
+        [isRowPresent, rowIndex] = ismember(ID_sort, EdgeAcc(1:NumGlobalEdges, 1:2), 'rows');
+
+        if ~isRowPresent
+            Info_tri(edgeLocalNo, 1) = NumGlobalEdges;
+
+            EdgeAcc(NumGlobalEdges, :) = [ID_sort, edgeLocalNo];
+            NumGlobalEdges = NumGlobalEdges + 1;
+        else
+            edgeLocalNo_II = EdgeAcc(rowIndex, 3);
+
+            Info_tri(edgeLocalNo, :) = Info_tri(edgeLocalNo_II, :);
+            continue
+        end
+
+        % boundary identification
+        % boundary identification
+        % boundary identification triangles
+        if (points(ID1, 3) == 0 && points(ID2, 3) == 0)
+            Info_tri(edgeLocalNo, 2) = 2;
+            Info_tri(edgeLocalNo, 3) = 0;
+            NumDirichiletEdge = NumDirichiletEdge + 1;
+            continue;
+        end
+
+        if (points(ID1, 3) == 1 && points(ID2, 3) == 1)
+            Info_tri(edgeLocalNo, 2) = 2;
+            Info_tri(edgeLocalNo, 3) = 1;
+            NumDirichiletEdge = NumDirichiletEdge + 1;
+            continue;
+        end
+        
+        if (points(ID1, 1) == 0 && points(ID2, 1) == 0) || ...
+           (points(ID1, 1) == 1 && points(ID2, 1) == 1) || ...
+           (points(ID1, 2) == 0 && points(ID2, 2) == 0) || ...
+           (points(ID1, 2) == 1 && points(ID2, 2) == 1)
+            Info_tri(edgeLocalNo, 2) = 3;
+            Info_tri(edgeLocalNo, 3) = 0.;
+            NumNeumannEdge = NumNeumannEdge + 1;
+            continue;
+        end
+        
+        % common interface edge
+        Info_tri(edgeLocalNo, 2) = 0;
+        Info_tri(edgeLocalNo, 3) = 0.;
+        NumInteriosEdge = NumInteriosEdge + 1;
+
+    end
+end
+clear EdgeAcc
+NumGlobalEdges = NumGlobalEdges - 1;
+NumInteriosEdge = NumInteriosEdge - 1;
+NumNeumannEdge = NumNeumannEdge - 1;
+NumDirichiletEdge = NumDirichiletEdge - 1;
+
+%------------triangles
+%------------triangles
+%------------triangles
+
+% temp variable
+TriAcc = zeros(NumTets * 4, 4);
+
+NumGlobalTri = 1;
+for i = 1:NumTets
+    for j = 1:4
+        triangleLocalNo = (i-1) * 4 + j;
 
         ID1 = tetrahedrons(i, FaceLocalOrder(j, 1)); 
         ID2 = tetrahedrons(i, FaceLocalOrder(j, 2)); 
         ID3 = tetrahedrons(i, FaceLocalOrder(j, 3));
         
         ID_sort = sort([ID1, ID2, ID3]);
-
-        [isRowPresent, rowIndex] = ismember(ID_sort, Triang_acc(1:globalTriID, 1:3), 'rows');
         
-        GlobalNum_sign_attr(edgeLocalNo, [4, 5]) = [i, j];
+        [isRowPresent, rowIndex] = ismember(ID_sort, TriAcc(1:NumGlobalTri, 1:3), 'rows');
 
         if ~isRowPresent
-            GlobalNum_sign_attr(edgeLocalNo, 1) = globalTriID;
-            Triang_acc(globalTriID, :) = [ID_sort, edgeLocalNo];
-            globalTriID = globalTriID + 1;
+            Info_tet(triangleLocalNo, 1) = NumGlobalTri;
+            Info_tet(triangleLocalNo, 4) = 1;
+
+            TriAcc(NumGlobalTri, :) = [ID_sort, triangleLocalNo];
+
+            NumGlobalTri = NumGlobalTri + 1;
         else
-            GlobalNum_sign_attr(edgeLocalNo, :) = GlobalNum_sign_attr(Triang_acc(rowIndex, 4), :);
-            GlobalNum_sign_attr(edgeLocalNo, 2) = -GlobalNum_sign_attr(edgeLocalNo, 2);
-            GlobalNum_sign_attr(edgeLocalNo, [4, 5]) = [i, j];
+            triangleLocalNo_II = TriAcc(rowIndex, 4);
+
+            Info_tet(triangleLocalNo, :) = Info_tet(triangleLocalNo_II, :);
+            Info_tet(triangleLocalNo, 4) = -Info_tet(triangleLocalNo, 4);
+            if (Info_tet(triangleLocalNo, 2) == 1) % it is a frac triangle
+                Info_tet(triangleLocalNo, 1) = NumGlobalTri;
+                Info_tet(triangleLocalNo, 4) = 1;
+                NumGlobalTri = NumGlobalTri + 1;
+            end
             continue
         end
-        
+
         [isRowPresent, rowIndex] = ismember(ID_sort, Tri_Frac_sort, 'rows');
-        
-        if isRowPresent % it is a frac triangle
-            GlobalNum_sign_attr(edgeLocalNo, 2) = 1; % sign
-            GlobalNum_sign_attr(edgeLocalNo, 3) = 1; 
-            GlobalNum_sign_attr(edgeLocalNo, 6) = rowIndex; % tri No.
+        if isRowPresent
+            Info_tet(triangleLocalNo, 2) = 1;
+            Info_tet(triangleLocalNo, 3) = rowIndex; % the ID of the frac element No
             continue
         end
 
         [isRowPresent, rowIndex] = ismember(ID_sort, Tri_Bound_D_sort, 'rows');
-        
-        if isRowPresent % it is a dirichilet triangle
-            GlobalNum_sign_attr(edgeLocalNo, 2) = 1; % sign
-            GlobalNum_sign_attr(edgeLocalNo, 3) = 2; 
-            GlobalNum_sign_attr(edgeLocalNo, 6) = rowIndex; % D No.
+        if isRowPresent
+            Info_tet(triangleLocalNo, 2) = 2;
+            Info_tet(triangleLocalNo, 3) = BoundValueTri_D(rowIndex);
             continue
         end
 
         [isRowPresent, rowIndex] = ismember(ID_sort, Tri_Bound_N_sort, 'rows');
-
-        if isRowPresent % it is a dirichilet triangle
-            GlobalNum_sign_attr(edgeLocalNo, 2) = 1; % sign
-            GlobalNum_sign_attr(edgeLocalNo, 3) = 3; 
-            GlobalNum_sign_attr(edgeLocalNo, 6) = rowIndex; % N No.
+        if isRowPresent
+            Info_tet(triangleLocalNo, 2) = 3;
+            Info_tet(triangleLocalNo, 3) = BoundValueTri_N(rowIndex);
             continue
         end
-        
-        % then it is just a normal interface triangle
-        GlobalNum_sign_attr(edgeLocalNo, 2) = 1; % sign
-        GlobalNum_sign_attr(edgeLocalNo, 3) = 0; 
-        
+        Info_tet(triangleLocalNo, 2) = 0;
     end
 end
+NumGlobalTri = NumGlobalTri - 1;
+clear TriAcc
 
-globalTriID = globalTriID - 1;
+%--------------check the numbering system
+%--------------check the numbering system
+%--------------check the numbering system
+tets_frac_adjacent = find(Info_tet(:, 2) == 1);
+tets_frac_adjacent = ceil(tets_frac_adjacent./4);
 
-tets_Frac_adjacent = find(GlobalNum_sign_attr(:, 3) == 1);
-tets_Frac_adjacent = GlobalNum_sign_attr(tets_Frac_adjacent, 4);
+tets_D_adjacent = find(Info_tet(:, 2) == 2);
+tets_D_adjacent = ceil(tets_D_adjacent./4);
+
+tets_N_adjacent = find(Info_tet(:, 2) == 3);
+tets_N_adjacent = ceil(tets_N_adjacent./4);
 
 figure(3)
+subplot(1, 3, 1)
 view(3)
-title('Frac releted tets')
+title('frac releted tets')
 view(3)
 xlabel('x')
 ylabel('y')
 zlabel('z')
 hold on
-tetramesh(tetrahedrons(tets_Frac_adjacent, [1:4]), points, tetrahedrons(tets_Frac_adjacent, 1) .* 0, 'FaceAlpha', 1., ...
-    'Edgecolor', 'r'); hold on;
+tetramesh(tetrahedrons(tets_frac_adjacent, [1:4]), points, tetrahedrons(tets_frac_adjacent, 1) .* 0, 'FaceAlpha', 1., ...
+    'Edgecolor', 'g'); hold on;
 pbaspect([1, 1, 1])
 
-tets_D_adjacent = find(GlobalNum_sign_attr(:, 3) == 2);
-tets_D_adjacent = GlobalNum_sign_attr(tets_D_adjacent, 4);
-
-figure(4)
+subplot(1, 3, 2)
 view(3)
 title('D releted tets')
 view(3)
@@ -217,10 +311,7 @@ tetramesh(tetrahedrons(tets_D_adjacent, [1:4]), points, tetrahedrons(tets_D_adja
     'Edgecolor', 'b'); hold on;
 pbaspect([1, 1, 1])
 
-tets_N_adjacent = find(GlobalNum_sign_attr(:, 3) == 3);
-tets_N_adjacent = GlobalNum_sign_attr(tets_N_adjacent, 4);
-
-figure(5)
+subplot(1, 3, 3)
 view(3)
 title('N releted tets')
 view(3)
@@ -229,114 +320,57 @@ ylabel('y')
 zlabel('z')
 hold on
 tetramesh(tetrahedrons(tets_N_adjacent, [1:4]), points, tetrahedrons(tets_N_adjacent, 1) .* 0, 'FaceAlpha', 1., ...
-    'Edgecolor', 'g'); hold on;
+    'Edgecolor', 'r'); hold on;
 pbaspect([1, 1, 1])
 
-%--------------------------------
-%--------------------------------
-%--------------------------------
-NumInteriosEdge = 1;
-NumNeumannEdge = 1;
-NumDirichiletEdge = 1;
+%--------edges checking numbering system
+%--------edges checking numbering system
+%--------edges checking numbering system
 
-EdgeLocalOrder = [2, 3
-    3, 1
-    1, 2];
+tets_D_adjacent = find(Info_tri(:, 2) == 2);
+tets_D_adjacent = ceil(tets_D_adjacent./3);
 
-EdgeAcc = zeros(NumFracTri * 3, 5);
+tets_N_adjacent = find(Info_tri(:, 2) == 3);
+tets_N_adjacent = ceil(tets_N_adjacent./3);
 
-EdgeAttr = zeros(NumFracTri * 3, 3);
+tets_I_adjacent = find(Info_tri(:, 2) == 0);
+tets_I_adjacent = ceil(tets_I_adjacent./3);
+tets_I_adjacent = unique(tets_I_adjacent);
 
-GlobalEdgeID = 1;
-
-for i = 1:NumFracTri
-    for j = 1:3
-        edgeLocalID = (i - 1) * 3 + j;
-
-        ID1 = Tri_Frac(i, EdgeLocalOrder(j, 1));
-        ID2 = Tri_Frac(i, EdgeLocalOrder(j, 2));
-
-        ID_sort = sort([ID1, ID2]);
-        
-        [isRowPresent, rowIndex] = ismember(ID_sort, EdgeAcc(1:GlobalEdgeID, 1:2), 'rows');
-
-        if ~isRowPresent
-            EdgeAttr(edgeLocalID, 1) = GlobalEdgeID;
-      
-            EdgeAcc(GlobalEdgeID, :) = [ID_sort, i, j, edgeLocalID];
-            GlobalEdgeID = GlobalEdgeID + 1;
-        else
-            
-            EdgeAttr(edgeLocalID, :) = EdgeAttr(EdgeAcc(rowIndex, 5), :);
-            %EdgeAttr(GlobalEdgeID, 3:5) = [i, j, edgeLocalID]; 
-            continue
-        end
-        
-        % boundary conditions
-        if (points(ID1, 3) == 0 && points(ID2, 3) == 0)
-            EdgeAttr(edgeLocalID, 2) = 2;
-            EdgeAttr(edgeLocalID, 3) = 0;
-            NumDirichiletEdge = NumDirichiletEdge + 1;
-            continue;
-        end
-
-        if (points(ID1, 3) == 1 && points(ID2, 3) == 1)
-            EdgeAttr(edgeLocalID, 2) = 2;
-            EdgeAttr(edgeLocalID, 3) = 1;
-            NumDirichiletEdge = NumDirichiletEdge + 1;
-            continue;
-        end
-        
-        if (points(ID1, 1) == 0 && points(ID2, 1) == 0) || ...
-           (points(ID1, 1) == 1 && points(ID2, 1) == 1) || ...
-           (points(ID1, 2) == 0 && points(ID2, 2) == 0) || ...
-           (points(ID1, 2) == 1 && points(ID2, 2) == 1)
-            EdgeAttr(edgeLocalID, 2) = 3;
-            EdgeAttr(edgeLocalID, 3) = 0.;
-            NumNeumannEdge = NumNeumannEdge + 1;
-            continue;
-        end
-
-        % common interface edge
-        EdgeAttr(edgeLocalID, 2) = 0;
-        EdgeAttr(edgeLocalID, 3) = 0.;
-        NumInteriosEdge = NumInteriosEdge + 1;
-    end
-end
-GlobalEdgeID = GlobalEdgeID - 1;
-NumInteriosEdge = NumInteriosEdge - 1;
-NumNeumannEdge = NumNeumannEdge - 1;
-NumDirichiletEdge = NumDirichiletEdge - 1;
-
-inx = find(EdgeAttr(:, 2) == 2);
-inx = ceil(inx ./ 3);
-figure(6)
+figure(4)
+subplot(1, 3, 1)
 view(3)
-title('D releted triangles')
+title('interior tri')
 view(3)
 xlabel('x')
 ylabel('y')
 zlabel('z')
 hold on
-patch('Vertices', points, 'Faces', Tri_Frac(inx, 1:3), 'FaceVertexCData', zeros(size(inx, 1), 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0); hold on
+patch('Vertices', points, 'Faces', Tri_Frac(tets_I_adjacent, 1:3), 'FaceVertexCData', zeros(size(tets_I_adjacent, 1), 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0); hold on
 pbaspect([1, 1, 1])
 
-inx = find(EdgeAttr(:, 2) == 3);
-inx = ceil(inx ./ 3);
-figure(7)
+subplot(1, 3, 2)
 view(3)
-title('N releted triangles')
+title('d tri')
 view(3)
 xlabel('x')
 ylabel('y')
 zlabel('z')
 hold on
-patch('Vertices', points, 'Faces', Tri_Frac(inx, 1:3), 'FaceVertexCData', zeros(size(inx, 1), 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0); hold on
+patch('Vertices', points, 'Faces', Tri_Frac(tets_D_adjacent, 1:3), 'FaceVertexCData', zeros(size(tets_D_adjacent, 1), 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0); hold on
 pbaspect([1, 1, 1])
 
-%--------------------------------
-%--------------------------------
-%--------------------------------
-% q3, p3, q2, p2, p1
+subplot(1, 3, 3)
+view(3)
+title('n tri')
+view(3)
+xlabel('x')
+ylabel('y')
+zlabel('z')
+hold on
+patch('Vertices', points, 'Faces', Tri_Frac(tets_N_adjacent, 1:3), 'FaceVertexCData', zeros(size(tets_N_adjacent, 1), 1), 'FaceColor', 'flat', 'EdgeAlpha', 1, 'facealpha', 0); hold on
+pbaspect([1, 1, 1])
 
-Dim = globalTriID + NumTets + NumFracTri * 3 + NumFracTri + 1 + NumInteriosEdge;
+clear tets_frac_adjacent tets_D_adjacent tets_N_adjacent ID_sort i j edgeLocalNo edgeLocalNo_II 
+clear string_D_1 string_D_0 string_N tets_I_adjacent triangleLocalNo triangleLocalNo_II
+clear ID1 ID2 ID3 isRowPresent rowIndex Tri_Bound_D_sort Tri_Bound_N_sort Tri_Frac_sort

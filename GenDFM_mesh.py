@@ -61,7 +61,7 @@ gmsh.option.setNumber("General.Terminal", 1)
 gmsh.model.add("DFM")
 
 
-lc = 0.15
+lc = 10
 
 fc_p1 = gmsh.model.occ.addPoint(0.5, 0, 0, lc)
 fc_p2 = gmsh.model.occ.addPoint(0.5, 0, 1.5, lc)
